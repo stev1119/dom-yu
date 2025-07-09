@@ -693,6 +693,7 @@
                             <option value="이동+" ${student.status === '이동+' ? 'selected' : ''}>이동+</option>
                             <option value="등미" ${student.status === '등미' ? 'selected' : ''}>등미</option>
                             <option value="퇴소" ${student.status === '퇴소' ? 'selected' : ''}>퇴소</option>
+                            <option value="미배정" ${student.status === '미배정' ? 'selected' : ''}>미배정</option>
                         </select>
                     </div>
                     <div class="student-memo">
@@ -820,7 +821,7 @@
         async function updateGoogleSheets() {
             try {
                 // 실제 Apps Script 웹앱 URL
-                const scriptUrl = 'https://script.google.com/macros/s/AKfycbyRvh1FQBXdxHw8gQnTKM46kZERm7KRFYDOecXXSHLt1bngOmf2rc2NX4zrZ_UuDOQ07A/exec';
+                const scriptUrl = 'https://script.google.com/macros/s/AKfycbx4p5ROFUsWe09qYu98MEmEQoMuf8U09u677KDta7ahJhZVVyEkFASLONJWZdvjQJSnow/exec';
                 
                 // 업데이트할 학생 데이터 준비
                 const updates = [];
