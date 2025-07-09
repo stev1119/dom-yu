@@ -540,7 +540,7 @@
             }
         };
 
-        // 구글 시트 데이터 가져오기 (원본 그대로)
+        // 구글 시트 데이터 가져오기 (B3부터 시작) - 원본 그대로
         async function loadSheetsData() {
             try {
                 showLoading(true);
@@ -592,41 +592,10 @@
                 
                 showLoading(false);
                 
-                // *** 새로 추가: 보고 히스토리 로드 ***
-                loadReportHistory();
-                
             } catch (error) {
                 console.error('시트 데이터 로드 실패:', error);
                 showMessage('시트 데이터를 불러오는데 실패했습니다: ' + error.message, 'error');
                 showLoading(false);
-            }
-        }
-
-        // *** 새로 추가: 보고 히스토리 로드 ***
-        function loadReportHistory() {
-            const today = new Date().toISOString().split('T')[0];
-            const storedHistory = localStorage.getItem('reportHistory');
-            
-            if (storedHistory) {
-                try {
-                    const history = JSON.parse(storedHistory);
-                    
-                    // 오늘 날짜가 아닌 기록들은 삭제
-                    const todayHistory = {};
-                    Object.keys(history).forEach(key => {
-                        if (history[key] === today) {
-                            todayHistory[key] = history[key];
-                        }
-                    });
-                    
-                    lastReportDate = todayHistory;
-                    localStorage.setItem('reportHistory', JSON.stringify(todayHistory));
-                    
-                    console.log('오늘 보고 히스토리:', lastReportDate);
-                } catch (error) {
-                    console.error('보고 히스토리 로드 오류:', error);
-                    lastReportDate = {};
-                }
             }
         }
 
@@ -724,7 +693,6 @@
                             <option value="이동+" ${student.status === '이동+' ? 'selected' : ''}>이동+</option>
                             <option value="등미" ${student.status === '등미' ? 'selected' : ''}>등미</option>
                             <option value="퇴소" ${student.status === '퇴소' ? 'selected' : ''}>퇴소</option>
-                            <option value="미배정" ${student.status === '미배정' ? 'selected' : ''}>미배정</option>
                         </select>
                     </div>
                     <div class="student-memo">
@@ -749,7 +717,7 @@
             currentStudents[index].memo = memo;
         }
 
-        // 통계 자동 집계 (미배정 상태 추가)
+        // 통계 자동 집계 (원본 그대로)
         function updateStats() {
             const stats = {
                 current: 0,
@@ -787,9 +755,6 @@
                         case '퇴소':
                             stats.etc++;
                             break;
-                        case '미배정':
-                            // 미배정은 통계에 포함하지 않음
-                            break;
                     }
                 }
             });
@@ -808,7 +773,7 @@
             document.getElementById('etc-count').value = stats.etc;
         }
 
-        // 보고서 제출 (*** 수정: 중복 제출 체크 강화 ***)
+        // 보고서 제출 (원본 그대로)
         async function submitReport() {
             const manager = document.getElementById('manager-select').value;
             const building = document.getElementById('building-select').value;
@@ -820,11 +785,12 @@
                 return;
             }
 
-            // *** 수정: 중복 제출 체크 ***
+            // 중복 제출 체크
             const reportKey = `${building}-${floor}`;
-            const today = new Date().toISOString().split('T')[0];
+            const today = new Date().toDateString();
+            const currentHour = new Date().getHours();
             
-            if (!isModification && lastReportDate[reportKey] === today) {
+            if (!isModification && lastReportDate[reportKey] === today && currentHour < 22) {
                 showMessage('이미 오늘 보고를 완료했습니다. 수정보고를 선택해주세요.', 'error');
                 return;
             }
@@ -838,9 +804,8 @@
                 // 잔디 웹훅 전송
                 await sendToJandi(manager, building, floor, isModification);
 
-                // *** 수정: 제출 완료 처리 ***
+                // 제출 완료 처리
                 lastReportDate[reportKey] = today;
-                localStorage.setItem('reportHistory', JSON.stringify(lastReportDate));
                 showMessage('인원보고가 성공적으로 제출되었습니다.', 'success');
                 
                 showLoading(false);
@@ -851,7 +816,7 @@
             }
         }
 
-        // 구글 시트 업데이트 (*** 수정: E열에 메모 저장 ***)
+        // 구글 시트 업데이트 - 수정된 버전
         async function updateGoogleSheets() {
             try {
                 // 실제 Apps Script 웹앱 URL
@@ -861,16 +826,20 @@
                 const updates = [];
                 
                 currentStudents.forEach(student => {
-                    if (student.name !== '미배정' && student.rowIndex >= 0) {
-                        // 행 번호 계산: rowIndex는 sheetsData 배열 인덱스이고, 실제 시트 행은 rowIndex + 3
-                        const actualSheetRow = student.rowIndex + 3;
+                    if (student.rowIndex >= 0) {
+                        // rowIndex는 sheetsData 배열 인덱스
+                        // sheetsData[0]는 헤더, sheetsData[1]부터 실제 데이터
+                        // sheetsData[i][0]은 실제 시트 행 번호를 저장하고 있음
+                        const actualSheetRow = sheetsData[student.rowIndex][0]; // 실제 시트 행 번호
                         
                         updates.push({
                             room: student.room,
                             status: student.status,
-                            memo: student.memo, // *** 수정: E열에 메모 저장 ***
+                            memo: student.memo || '', // 빈 문자열도 전송
                             rowIndex: actualSheetRow - 1 // Apps Script는 0-based 인덱스 사용
                         });
+                        
+                        console.log(`준비된 업데이트: ${student.room} -> 행 ${actualSheetRow} (상태: ${student.status}, 메모: ${student.memo})`);
                     }
                 });
 
@@ -881,27 +850,47 @@
 
                 console.log('Apps Script로 전송할 데이터:', updates);
 
-                // Apps Script 웹앱 호출
+                // Apps Script 웹앱 호출 - CORS 해결을 위해 fetch 방식 변경
                 const response = await fetch(scriptUrl, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'text/plain',
                     },
                     body: JSON.stringify({
                         action: 'updateStudents',
                         updates: updates
-                    }),
-                    mode: 'no-cors' // CORS 문제 해결
+                    })
                 });
 
-                // no-cors 모드에서는 응답을 읽을 수 없으므로 성공으로 간주
-                console.log('Apps Script 호출 완료 (no-cors 모드)');
+                console.log('Apps Script 응답 상태:', response.status);
+                
+                if (response.ok) {
+                    try {
+                        const result = await response.text();
+                        console.log('Apps Script 응답:', result);
+                        
+                        // 응답이 JSON인지 확인
+                        try {
+                            const jsonResult = JSON.parse(result);
+                            if (jsonResult.success) {
+                                console.log('구글 시트 업데이트 성공');
+                            } else {
+                                console.error('Apps Script 오류:', jsonResult.message);
+                            }
+                        } catch (parseError) {
+                            console.log('JSON 파싱 실패, 텍스트 응답:', result);
+                        }
+                    } catch (textError) {
+                        console.log('응답 텍스트 읽기 실패:', textError);
+                    }
+                }
 
                 // 로컬 데이터 동기화
                 currentStudents.forEach(student => {
                     if (student.rowIndex >= 0 && sheetsData[student.rowIndex]) {
-                        sheetsData[student.rowIndex][4] = student.status; // D열
-                        sheetsData[student.rowIndex][5] = student.memo; // *** 수정: E열에 메모 저장 ***
+                        sheetsData[student.rowIndex][4] = student.status; // D열 (상태)
+                        sheetsData[student.rowIndex][5] = new Date().toISOString().split('T')[0]; // E열 (날짜)
+                        sheetsData[student.rowIndex][6] = student.memo; // F열 (메모)
                     }
                 });
 
@@ -920,7 +909,7 @@
                     currentStudents.forEach(student => {
                         if (student.rowIndex >= 0 && sheetsData[student.rowIndex]) {
                             sheetsData[student.rowIndex][4] = student.status;
-                            sheetsData[student.rowIndex][5] = student.memo; // *** 수정: E열에 메모 ***
+                            sheetsData[student.rowIndex][6] = student.memo;
                         }
                     });
                     
@@ -929,13 +918,13 @@
             }
         }
 
-        // 백업용 직접 API 호출 (*** 수정: E열에 메모 저장 ***)
+        // 백업용 직접 API 호출 - 수정된 버전
         async function updateSheetsDirectly() {
             const updates = [];
             
             currentStudents.forEach(student => {
-                if (student.name !== '미배정' && student.rowIndex >= 0) {
-                    const actualSheetRow = student.rowIndex + 3;
+                if (student.rowIndex >= 0) {
+                    const actualSheetRow = sheetsData[student.rowIndex][0]; // 실제 시트 행 번호
                     
                     // D열 (상태) 업데이트
                     updates.push({
@@ -943,10 +932,17 @@
                         values: [[student.status]]
                     });
                     
-                    // *** 수정: E열에 메모 저장 (날짜 대신) ***
+                    // E열 (날짜) 업데이트
+                    const today = new Date().toISOString().split('T')[0];
                     updates.push({
                         range: `yulee!E${actualSheetRow}`,
-                        values: [[student.memo]]
+                        values: [[today]]
+                    });
+                    
+                    // F열 (메모) 업데이트 - 빈 문자열도 업데이트
+                    updates.push({
+                        range: `yulee!F${actualSheetRow}`,
+                        values: [[student.memo || '']]
                     });
                 }
             });
@@ -988,15 +984,14 @@
                 etc: parseInt(document.getElementById('etc-count').value)
             };
 
-            // 특별 상태 학생들 정보 수집 (미배정 추가)
+            // 특별 상태 학생들 정보 수집 (이름이 없어도 비고가 있으면 포함)
             const specialStudents = {
                 외박: currentStudents.filter(s => s.status === '외박' && (s.name !== '미배정' || s.memo.trim())),
                 신규: currentStudents.filter(s => s.status === '신규' && (s.name !== '미배정' || s.memo.trim())),
                 '이동-': currentStudents.filter(s => s.status === '이동-' && (s.name !== '미배정' || s.memo.trim())),
                 '이동+': currentStudents.filter(s => s.status === '이동+' && (s.name !== '미배정' || s.memo.trim())),
                 등미: currentStudents.filter(s => s.status === '등미' && (s.name !== '미배정' || s.memo.trim())),
-                퇴소: currentStudents.filter(s => s.status === '퇴소' && (s.name !== '미배정' || s.memo.trim())),
-                미배정: currentStudents.filter(s => s.status === '미배정' && (s.name !== '미배정' || s.memo.trim()))
+                퇴소: currentStudents.filter(s => s.status === '퇴소' && (s.name !== '미배정' || s.memo.trim()))
             };
 
             let message = `${isModification ? '🔄 수정보고' : '📋 인원보고'}\n\n`;
@@ -1106,7 +1101,25 @@
         // 페이지 로드 시 초기화 (원본 그대로)
         window.addEventListener('load', function() {
             loadSheetsData();
+            
+            // 어제 보고 데이터 복원 (22시 이후)
+            const currentHour = new Date().getHours();
+            if (currentHour >= 22) {
+                // localStorage에서 어제 보고 데이터 복원
+                const yesterdayData = localStorage.getItem('yesterdayReports');
+                if (yesterdayData) {
+                    lastReportDate = JSON.parse(yesterdayData);
+                }
+            }
         });
+
+        // 매일 22시에 어제 데이터 저장 (원본 그대로)
+        setInterval(() => {
+            const now = new Date();
+            if (now.getHours() === 22 && now.getMinutes() === 0) {
+                localStorage.setItem('yesterdayReports', JSON.stringify(lastReportDate));
+            }
+        }, 60000); // 1분마다 체크
     </script>
 </body>
 </html>
